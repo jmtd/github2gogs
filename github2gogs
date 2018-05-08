@@ -23,7 +23,7 @@ i=0
 :> "$tmpdir/answers"
 while : ; do
   i=$((i+1))
-  GET "https://api.github.com/users/$github_user/repos?per_page=100&page=$i" > "$tmpdir/tmpfile"
+  curl "https://api.github.com/users/$github_user/repos?per_page=100&page=$i" > "$tmpdir/tmpfile"
   ret=$(jq '.|length' <"$tmpdir/tmpfile")
 
   jq -s 'flatten | map(select(.fork==false))' "$tmpdir/answers" "$tmpdir/tmpfile" > "$tmpdir/tmpfile2"
