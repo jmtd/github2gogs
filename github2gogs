@@ -1,0 +1,45 @@
+#!/bin/bash
+set -u
+set -e
+
+# parameters you must set!
+github_user=user
+gogs_uri=https://example.org/gogs
+gogs_token=invalid # generate via the web interface
+uid=3 # see below
+
+# determining the correct UID: query the API by hand. I wanted
+# to migrate to a specific organisation in my Gogs (github) to
+# keep the mirrored repositories separate from any other I put
+# there. correct uid determined by e.g.
+# curl -D- -H "Authorization: token $gogs_token" $gogs_uri/api/v1/user/orgs
+
+
+tmpdir=$(mktemp -td migrate_sh_XXXXXX)
+trap "rm -rf $tmpdir" INT TERM EXIT
+
+# fetches all non-fork repos as cloneable URIs
+i=0
+:> "$tmpdir/answers"
+while : ; do
+  i=$((i+1))
+  GET "https://api.github.com/users/$github_user/repos?per_page=100&page=$i" > "$tmpdir/tmpfile"
+  ret=$(jq '.|length' <"$tmpdir/tmpfile")
+
+  jq -s 'flatten | map(select(.fork==false))' "$tmpdir/answers" "$tmpdir/tmpfile" > "$tmpdir/tmpfile2"
+  mv "$tmpdir/tmpfile2" "$tmpdir/answers"
+
+  [[ "$ret" -ge 100 ]] || break
+done
+
+# extract the name of each repo
+jq '.[].html_url' < "$tmpdir/answers" | tr -d \" | while read clone_addr; do
+
+    repo_name=${clone_addr#https://github.com/$github_user/}
+
+    # send Gogs a mirror-create request
+    curl -H "Authorization: token $gogs_token" -d \
+        "clone_addr=$clone_addr&uid=$uid&repo_name=$repo_name&mirror=on" \
+        -X POST "$gogs_uri/api/v1/repos/migrate"
+
+done
